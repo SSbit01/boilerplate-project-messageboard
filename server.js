@@ -7,10 +7,25 @@ const cors        = require('cors');
 const apiRoutes         = require('./routes/api.js');
 const fccTestingRoutes  = require('./routes/fcctesting.js');
 const runner            = require('./test-runner');
+//
+const helmet = require("helmet");
+//
 
 const app = express();
 
-app.use('/public', express.static(process.cwd() + '/public'));
+//
+app.use(helmet.frameguard({
+  action: "sameorigin"
+}));
+app.use(helmet.dnsPrefetchControl({
+  allow: false
+}));
+app.use(helmet.referrerPolicy({
+  policy: "same-origin"
+}));
+//
+
+app.use('/public', express.static(__dirname + '/public'));
 
 app.use(cors({origin: '*'})); //For FCC testing purposes only
 
@@ -18,19 +33,19 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 //Sample front-end
-app.route('/b/:board/')
+app.route('/b/:board')
   .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/board.html');
+    res.sendFile(__dirname + '/views/board.html');
   });
 app.route('/b/:board/:threadid')
   .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/thread.html');
+    res.sendFile(__dirname + '/views/thread.html');
   });
 
 //Index page (static HTML)
 app.route('/')
   .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
+    res.sendFile(__dirname + '/views/index.html');
   });
 
 //For FCC testing purposes
