@@ -1,7 +1,7 @@
-const ObjectID = require("mongodb").ObjectID;
-const mongoose = require("mongoose");
+const {connect, Schema, model, Error} = require("mongoose");
 const bcrypt = require("bcrypt");
-mongoose.connect(
+
+connect(
   process.env.DB,
   {
     useNewUrlParser: true,
@@ -10,13 +10,27 @@ mongoose.connect(
   }
 );
 
-const schema = new mongoose.Schema({
+const reply_schema = new Schema({
   text: {type:String, required:true},
-  created_on: {type:Date, required:true},
-  bumped_on: {type:Date, required:true},
+  reported: {type:Boolean, default:"false"},
+  delete_password: {type:String, required:true}
+}, {
+  timestamps: {
+    createdAt: "created_on",
+    updatedAt: false
+  }
+});
+
+const thread_schema = new Schema({
+  text: {type:String, required:true},
   reported: {type:Boolean, default:"false"},
   delete_password: {type:String, required:true},
-  replies: []
+  replies: [reply_schema]
+}, {
+  timestamps: {
+    createdAt: "created_on",
+    updatedAt: "bumped_on"
+  }
 });
 
 const saltRounds = 10;
@@ -25,162 +39,145 @@ const error = "ERROR!";
 
 
 function Handler() {
-  this.tpost = (req, res) => {
-    let board = req.params.board;
-    let rb = req.body;
-    let model = mongoose.model(board, schema);
-    let date = new Date();
-    new model({
-      text: rb.text,
-      created_on: date,
-      bumped_on: date,
-      delete_password: bcrypt.hashSync(rb.delete_password,saltRounds)
-    }).save((err, data) => {
-      if (data===null || err) {
-        res.send(err);
-      } else {
-        res.redirect(`/b/${board}/${data._id}`);
-      }
-    });
-  }
-
-  this.tget = (req, res) => {
-    let model = mongoose.model(req.params.board, schema);
-    model
-    .find({})
-    .select("-reported -delete_password")
-    .sort({bumped_on: -1})
-    .limit(10)
-    .exec((err, data) => {
-      data.forEach(i => {
-        i.replies = i.replies.slice(Math.max(i.replies.length-3,0));
-        i.replies.forEach(j => {
-          delete j.reported;
-          delete j.delete_password;
-        });
+  this.thread = {
+    post(req, res) {
+      let board = req.params.board;
+      let rb = req.body;
+      let Thread = model(board, thread_schema);
+      new Thread({
+        text: rb.text,
+        delete_password: bcrypt.hashSync(rb.delete_password,saltRounds)
+      }).save((err, data) => {
+        if (data === null || err) {
+          res.send(error);
+        } else {
+          res.redirect(`/b/${board}/${data._id}`);
+        }
       });
-      res.send(data);
-    });
+    },
+    get(req, res) {
+      let Thread = model(req.params.board, thread_schema);
+      Thread
+        .find({})
+        .limit(10)
+        .select("-reported -delete_password -replies.reported -replies.delete_password")
+        .sort({bumped_on: -1})
+        .exec((err, data) => {
+          if (data === null || err) {
+            res.send(error);
+          } else {
+            data.forEach(i => {
+              i.replies = i.replies.slice(-3);
+            });
+            res.send(data);
+          }
+        });
+    },
+    delete(req, res) {
+      let rb = req.body;
+      let Thread = model(req.params.board, thread_schema);
+      Thread.findById(rb.thread_id, (err, data) => {
+        if (data === null || err) {
+          res.send(error);
+        } else if (bcrypt.compareSync(rb.delete_password, data.delete_password)) {
+          data.remove(err => {
+            if (err) {
+              res.send(err);
+            } else {
+              res.send("success")
+            }
+          });
+        } else {
+          res.send("incorrect password");
+        }
+      });
+    },
+    put(req, res) {
+      let rb = req.body;
+      let Thread = model(req.params.board, thread_schema);
+      Thread.findByIdAndUpdate(rb.thread_id, {reported:true}, {timestamps: false}, (err, data) => {
+        if (data === null || err) {
+          res.send("id not found");
+        } else {
+          res.send("success");
+        }
+      });
+    }
   }
 
-  this.tdelete = (req, res) => {
-    let rb = req.body;
-    let model = mongoose.model(req.params.board, schema);
-    model.findById(rb.thread_id, (err,data) => {
-      if (data===null || err) {
-        res.send(error);
-      } else if (bcrypt.compareSync(rb.delete_password,data.delete_password)) {
-        model.findByIdAndDelete(rb.thread_id, (err2, d2) => {
-          if (d2===null || err2) {
+  this.reply = {
+    post(req, res) {
+      let board = req.params.board;
+      let {thread_id, text, delete_password} = req.body;
+      let Thread = model(board, thread_schema);
+      Thread.findByIdAndUpdate(
+        thread_id,
+        {$push: {replies: {
+          text,
+          delete_password: bcrypt.hashSync(delete_password, saltRounds)
+        }}},
+        (err, data) => {
+          if (data === null || err) {
+            res.send("id not found");
+          } else {
+            res.redirect(`/b/${board}/${thread_id}`);
+          }
+        }
+      );
+    },
+    get(req, res) {
+      let Thread = model(req.params.board, thread_schema);
+      Thread.findById(req.query.thread_id)
+        .select("-reported -delete_password -replies.reported -replies.delete_password")
+        .exec((err, data) => {
+          if (data === null || err) {
+            res.send("id not found");
+          } else {
+            res.send(data);
+          }
+        });
+    },
+    delete(req, res) {
+      let rb = req.body;
+      let Thread = model(req.params.board, thread_schema);
+      Thread.findById(rb.thread_id, (err, data) => {
+        if (data === null || err) {
+          res.send("thread id not found");
+        } else {
+          let reply = data.replies.id(rb.reply_id);
+          if (reply === undefined) {
+            res.send("reply id not found");
+          } else if (bcrypt.compareSync(rb.delete_password, reply.delete_password)) {
+            reply.text = "[deleted]";
+            data.save({timestamps: false}, err => {
+              if (err) {
+                res.send(err);
+              } else {
+                res.send("success");
+              }
+            });
+          } else {
+            res.send("incorrect password");
+          }
+        }
+      });
+    },
+    put(req, res) {
+      let rb = req.body;
+      let Thread = model(req.params.board, thread_schema);
+      Thread.findOneAndUpdate(
+        {_id:rb.thread_id, "replies._id":rb.reply_id},
+        {$set: {"replies.$.reported":true}},
+        {timestamps: false},
+        (err, data) => {
+          if (data === null || err) {
             res.send(error);
           } else {
             res.send("success");
           }
-        });
-      } else {
-        res.send("incorrect password");
-      }
-    });
-  }
-
-  this.tput = (req, res) => {
-    let rb = req.body;
-    let model = mongoose.model(req.params.board, schema);
-    model.findByIdAndUpdate(rb.thread_id, {reported:true}, (err, data) => {
-      if (data===null || err) {
-        res.send("id not found");
-      } else {
-        res.send("success");
-      }
-    });
-  }
-
-  this.rpost = (req, res) => {
-    let board = req.params.board;
-    let rb = req.body;
-    let model = mongoose.model(board, schema);
-    let date_n = new Date();
-    let obj = {
-      _id: new ObjectID(),
-      text: rb.text,
-      created_on: date_n,
-      delete_password: bcrypt.hashSync(rb.delete_password,saltRounds),
-      reported: false
+        }
+      );
     }
-    model.findByIdAndUpdate(
-      rb.thread_id,
-      {$push: {replies:obj},
-      bumped_on: date_n},
-      (err, data) => {
-        if (data===null || err) {
-          res.send("id not found");
-        } else {
-          res.redirect(`/b/${board}/${rb.thread_id}`);
-        }
-      }
-    );
-  }
-
-  this.rget = (req, res) => {
-    let model = mongoose.model(req.params.board, schema);
-    model.findById(req.query.thread_id)
-    .select("-reported -delete_password")
-    .exec((err, data) => {
-      if (data===null || err) {
-        res.send("id not found");
-      } else {
-        data.replies.forEach(i => {
-          delete i.reported;
-          delete i.delete_password;
-        });
-        res.send(data);
-      }
-    });
-  }
-
-  this.rdelete = (req, res) => {
-    let rb = req.body;
-    let model = mongoose.model(req.params.board, schema);
-    model.findById(rb.thread_id, (err,data) => {
-      if (data===null || err) {
-        res.send("thread id not found");
-      } else {
-        let reply = data.replies.find(obj => {return obj._id==rb.reply_id});
-        if (reply === undefined) {
-          res.send("reply id not found");
-        } else if (bcrypt.compareSync(rb.delete_password,reply.delete_password)) {
-          model.findOneAndUpdate(
-            {_id:rb.thread_id, "replies._id":new ObjectID(rb.reply_id)},
-            {$set: {"replies.$.text":"[deleted]"}},
-            (err2, d2) => {
-              if (d2===null || err2) {
-                res.send(error);
-              } else {
-                res.send("success");
-              }
-            }
-          );
-        } else {
-          res.send("incorrect password");
-        }
-      }
-    });
-  }
-
-  this.rput = (req, res) => {
-    let rb = req.body;
-    let model = mongoose.model(req.params.board, schema);
-    model.findOneAndUpdate(
-      {_id:rb.thread_id, "replies._id":new ObjectID(rb.reply_id)},
-      {$set: {"replies.$.reported":true}},
-      (err, data) => {
-        if (data===null || err) {
-          res.send(error);
-        } else {
-          res.send("success");
-        }
-      }
-    );
   }
 }
 

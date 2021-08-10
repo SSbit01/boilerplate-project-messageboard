@@ -7,7 +7,6 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/public/g.css">
     <link rel="stylesheet" href="/public/b.css">
   </head>
   <body>
@@ -30,7 +29,7 @@
     <script>
       $(function() {
         var t_path = window.location.pathname;
-        if (t_path.slice(-1) != "/") {t_path+="/"}
+        if (t_path.slice(-1) != "/") t_path += "/";
         var currentBoard = t_path.slice(3,-1);
         var url = "/api/threads/"+currentBoard;
         $('#boardTitle').text('Welcome to '+t_path);
@@ -80,7 +79,6 @@
         });
         
         $('#boardDisplay').on('submit','#reportThread', function(e) {
-          var url = "/api/threads/"+currentBoard;
           $.ajax({
             type: "PUT",
             url: url,
@@ -100,12 +98,14 @@
           e.preventDefault();
         });
         $('#boardDisplay').on('submit','#deleteThread', function(e) {
-          var url = "/api/threads/"+currentBoard;
           $.ajax({
             type: "DELETE",
             url: url,
             data: $(this).serialize(),
-            success: function(data) { alert(data) }
+            success(data) {
+              alert(data);
+              window.location.href = "/b/"+currentBoard;
+            }
           });
           e.preventDefault();
         });        
@@ -115,7 +115,10 @@
             type: "DELETE",
             url: url,
             data: $(this).serialize(),
-            success: function(data) { alert(data) }
+            success(data) {
+              alert(data);
+              window.location.reload();
+            }
           });
           e.preventDefault();
         });              

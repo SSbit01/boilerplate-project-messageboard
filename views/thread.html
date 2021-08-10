@@ -7,7 +7,6 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/public/g.css">
     <link rel="stylesheet" href="/public/b.css">
   </head>
   <body>
@@ -74,7 +73,6 @@
           e.preventDefault();
         });
         $('#boardDisplay').on('submit','#reportReply', function(e) {
-          var url = "/api/replies/"+currentURL[0];
           $.ajax({
             type: "PUT",
             url: url,
@@ -89,17 +87,22 @@
             type: "DELETE",
             url: url,
             data: $(this).serialize(),
-            success: function(data) { alert(data) }
+            success(data) {
+              alert(data);
+              window.location.href = "/b/"+currentURL[0];
+            }
           });
           e.preventDefault();
         });        
         $('#boardDisplay').on('submit','#deleteReply', function(e) {
-          var url = "/api/replies/"+currentURL[0];
           $.ajax({
             type: "DELETE",
             url: url,
             data: $(this).serialize(),
-            success: function(data) { alert(data) }
+            success(data) {
+              alert(data);
+              window.location.reload();
+            }
           });
           e.preventDefault();
         });              

@@ -1,19 +1,17 @@
 'use strict';
-const handler = require("../controllers/handler.js");
+const {thread, reply} = new (require("../controllers/handler.js"))();
 
-module.exports = function (app) {
-  const Handler = new handler();
-
+module.exports = function(app) {
   app.route('/api/threads/:board')
-  .post(Handler.tpost)
-  .get(Handler.tget)
-  .delete(Handler.tdelete)
-  .put(Handler.tput);
+    .post(thread.post)
+    .get(thread.get)
+    .delete(thread.delete)
+    .put(thread.put);
 
 
   app.route('/api/replies/:board')
-  .post(Handler.rpost)
-  .get(Handler.rget)
-  .delete(Handler.rdelete)
-  .put(Handler.rput);
+    .post(reply.post)
+    .get(reply.get)
+    .delete(reply.delete)
+    .put(reply.put);
 };
