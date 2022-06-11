@@ -1,7 +1,11 @@
-const chaiHttp = require('chai-http');
-const chai = require('chai');
-const assert = chai.assert;
-const server = require('../server');
+const chai = require('chai'),
+      chaiHttp = require('chai-http'),
+      {assert} = chai,
+      //
+      {ObjectId} = require("mongodb"),
+      {compareSync} = require("bcrypt"),
+      //
+      server = require('../server');
 
 chai.use(chaiHttp);
 
@@ -12,45 +16,40 @@ suite('Functional Tests', function() {
   const board = "tests";
 
   test("Creating a new thread: POST request to /api/threads/{board}", done => {
+    const text = "test0",
+          delete_password = "test1";
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text0", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
-        requester
-          .get(`/api/replies/${board}?thread_id=${id}`)
-          .end((err2, res2) => {
-            let obj = res2.body;
-            assert.isArray(obj.replies);
-            assert.equal(obj.replies.length, 0);
-            assert.equal(obj._id, id);
-            assert.equal(obj.text, "text0");
-            assert.equal(obj.created_on, obj.bumped_on);
-            done();
-          });
+      .send({text, delete_password})
+      .end((err, {body}) => {
+        assert.isString(body._id);
+        assert.equal(body.text, text);
+        assert.approximately(new Date(body.created_on).getTime(), Date.now(), 5000);
+        assert.equal(body.created_on, body.bumped_on);
+        assert.isFalse(body.reported);
+        assert.isTrue(compareSync(delete_password, body.delete_password));
+        assert.isArray(body.replies);
+        assert.lengthOf(body.replies, 0);
+        done();
       });
   });
 
   test("Deleting a thread with the incorrect password: DELETE request to /api/threads/{board} with an invalid delete_password", done => {
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text1", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .delete(`/api/threads/${board}`)
-          .send({thread_id:id, delete_password:"test2"})
-          .end((err2, res2) => {
-            assert.equal(res2.text, "incorrect password");
+          .send({thread_id, delete_password: "test2"})
+          .end((err, {text}) => {
+            assert.equal(text, "incorrect password");
             requester
-              .get(`/api/replies/${board}?thread_id=${id}`)
-              .end((err3, res3) => {
-                let obj = res3.body;
-                assert.isArray(obj.replies);
-                assert.equal(obj.replies.length, 0);
-                assert.equal(id, obj._id);
-                assert.equal(obj.text, "text1");
-                assert.equal(obj.created_on, obj.bumped_on);
+              .get(`/api/replies/${board}`)
+              .query({thread_id})
+              .end((err, {body}) => {
+                assert.isNotNull(body);
+                assert.isNotEmpty(body);
                 done();
               });
           });
@@ -58,20 +57,21 @@ suite('Functional Tests', function() {
   });
 
   test("Deleting a thread with the correct password: DELETE request to /api/threads/{board} with a valid delete_password", done => {
+    const delete_password = "test1";
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text2", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .delete(`/api/threads/${board}`)
-          .send({thread_id:id, delete_password:"test"})
-          .end((err2, res2) => {
-            assert.equal(res2.text, "success");
+          .send({thread_id, delete_password})
+          .end((err, {text}) => {
+            assert.equal(text, "success");
             requester
-              .get(`/api/replies/${board}?thread_id=${id}`)
-              .end((err3, res3) => {
-                assert.equal(Object.keys(res3.body).length, 0);
+              .get(`/api/replies/${board}`)
+              .query({thread_id})
+              .end((err, {body}) => {
+                assert.isNull(body);
                 done();
               });
           });
@@ -81,38 +81,35 @@ suite('Functional Tests', function() {
   test("Reporting a thread: PUT request to /api/threads/{board}", done => {
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text3", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .put(`/api/threads/${board}`)
-          .send({thread_id:id})
-          .end((err2, res2) => {
-            assert.equal(res2.text, "success");
+          .send({thread_id})
+          .end((err, {text}) => {
+            assert.equal(text, "reported");
             done();
           });
       });
   });
 
   test("Creating a new reply: POST request to /api/replies/{board}", done => {
+    const text = "test_reply",
+          delete_password = "test_delete";
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text4", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .post(`/api/replies/${board}`)
-          .send({thread_id:id, text:"test_r", delete_password:"test"})
-          .end((err2, res2) => {
-            requester
-              .get(`/api/replies/${board}?thread_id=${id}`)
-              .end((err3, res3) => {
-                let obj = res3.body.replies[0];
-                assert.isDefined(obj._id);
-                assert.isDefined(obj.created_on);
-                assert.equal(obj.text, "test_r");
-                done();
-              });
+          .send({thread_id, text, delete_password})
+          .end((err, {body}) => {
+            assert.isString(body._id);
+            assert.equal(body.text, text);
+            assert.approximately(new Date(body.created_on).getTime(), Date.now(), 5000);
+            assert.isFalse(body.reported);
+            assert.isTrue(compareSync(delete_password, body.delete_password));
+            done();
           });
       });
   });
@@ -120,31 +117,25 @@ suite('Functional Tests', function() {
   test("Deleting a reply with the incorrect password: DELETE request to /api/threads/{board} with an invalid delete_password", done => {
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text5", delete_password:"test"})
-      .end((err, res) => {
-        let t_id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .post(`/api/replies/${board}`)
-          .send({thread_id:t_id, text:"test_r2", delete_password:"test"})
-          .end((err2, res2) => {
+          .send({thread_id, text: "test_r2", delete_password: "test_delete"})
+          .end((err, {body: {_id: reply_id}}) => {
             requester
-              .get(`/api/replies/${board}?thread_id=${t_id}`)
-              .end((err3, res3) => {
-                let r_id = res3.body.replies[0]._id;
+              .delete(`/api/replies/${board}`)
+              .send({thread_id, reply_id, delete_password: "test2"})
+              .end((err, {text}) => {
+                assert.equal(text, "incorrect password");
                 requester
-                  .delete(`/api/replies/${board}`)
-                  .send({thread_id:t_id, reply_id:r_id, delete_password:"test2"})
-                  .end((err4, res4) => {
-                    assert.equal(res4.text, "incorrect password");
-                    requester
-                      .get(`/api/replies/${board}?thread_id=${t_id}`)
-                      .end((err5, res5) => {
-                        let obj = res5.body.replies[0];
-                        assert.isDefined(obj._id);
-                        assert.isDefined(obj.created_on);
-                        assert.equal(obj.text, "test_r2");
-                        done();
-                      });
+                  .get(`/api/replies/${board}`)
+                  .query({thread_id})
+                  .end((err, {body: {replies: [reply]}}) => {
+                    assert.equal(reply._id, reply_id);
+                    assert.approximately(new Date(reply.created_on).getTime(), Date.now(), 5000);
+                    assert.isString(reply.text);
+                    done();
                   });
               });
           });
@@ -152,30 +143,26 @@ suite('Functional Tests', function() {
   });
 
   test("Deleting a reply with the correct password: DELETE request to /api/threads/{board} with a valid delete_password", done => {
+    const delete_password = "test_delete";
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text6", delete_password:"test"})
-      .end((err, res) => {
-        let t_id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .post(`/api/replies/${board}`)
-          .send({thread_id:t_id, text:"test_r3", delete_password:"test"})
-          .end((err2, res2) => {
+          .send({thread_id, text: "test_r2", delete_password})
+          .end((err, {body: {_id: reply_id}}) => {
             requester
-              .get(`/api/replies/${board}?thread_id=${t_id}`)
-              .end((err3, res3) => {
-                let r_id = res3.body.replies[0]._id;
+              .delete(`/api/replies/${board}`)
+              .send({thread_id, reply_id, delete_password})
+              .end((err, {text}) => {
+                assert.equal(text, "success");
                 requester
-                  .delete(`/api/replies/${board}`)
-                  .send({thread_id:t_id, reply_id:r_id, delete_password:"test"})
-                  .end((err4, res4) => {
-                    assert.equal(res4.text, "success");
-                    requester
-                      .get(`/api/replies/${board}?thread_id=${t_id}`)
-                      .end((err5, res5) => {
-                        assert.equal(res5.body.replies[0].text, "[deleted]");
-                        done();
-                      });
+                  .get(`/api/replies/${board}`)
+                  .query({thread_id})
+                  .end((err, {body: {replies: [reply]}}) => {
+                    assert.equal(reply.text, "[deleted]");
+                    done();
                   });
               });
           });
@@ -185,53 +172,47 @@ suite('Functional Tests', function() {
   test("Reporting a reply: PUT request to /api/replies/{board}", done => {
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text7", delete_password:"test"})
-      .end((err, res) => {
-        let t_id = res.res.req.path.slice(9);
+      .send({text: "test0", delete_password: "test1"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .post(`/api/replies/${board}`)
-          .send({thread_id:t_id, text:"test_r4", delete_password:"test"})
-          .end((err2, res2) => {
+          .send({thread_id, text: "test_r2", delete_password: "test_delete"})
+          .end((err, {body: {_id: reply_id}}) => {
             requester
-              .get(`/api/replies/${board}?thread_id=${t_id}`)
-              .end((err3, res3) => {
-                let r_id = res3.body.replies[0]._id;
-                requester
-                  .put(`/api/replies/${board}`)
-                  .send({thread_id:t_id, reply_id:r_id})
-                  .end((err4, res4) => {
-                    assert.equal(res4.text, "success");
-                    done();
-                  });
+              .put(`/api/replies/${board}`)
+              .send({thread_id, reply_id})
+              .end((err, {text}) => {
+                assert.equal(text, "reported");
+                done();
               });
           });
       });
   });
 
   test("Viewing a single thread with all replies: GET request to /api/replies/{board}", done => {
+    const thread_text = "test0",
+          reply_text = "test_reply";
     requester
       .post(`/api/threads/${board}`)
-      .send({text:"text8", delete_password:"test"})
-      .end((err, res) => {
-        let id = res.res.req.path.slice(9);
+      .send({text: thread_text, delete_password: "test"})
+      .end((err, {body: {_id: thread_id}}) => {
         requester
           .post(`/api/replies/${board}`)
-          .send({thread_id:id, text:"test_r5", delete_password:"test"})
-          .end((err2, res2) => {
+          .send({thread_id, text: reply_text, delete_password: "test"})
+          .end(() => {
             requester
-              .get(`/api/replies/${board}?thread_id=${id}`)
-              .end((err3, res3) => {
-                let obj = res3.body;
-                assert.isUndefined(obj.reported);
-                assert.isUndefined(obj.delete_password);
-                assert.isDefined(obj._id);
-                assert.equal(obj.text, "text8");
-                assert.isBelow(new Date(obj.created_on).getTime(), new Date(obj.bumped_on).getTime());
-                let reply = res3.body.replies[0];
-                assert.equal(Object.keys(reply).length, 3);
-                assert.isDefined(reply._id);
-                assert.isDefined(reply.created_on);
-                assert.equal(reply.text, "test_r5");
+              .get(`/api/replies/${board}`)
+              .query({thread_id})
+              .end((err, {body}) => {
+                assert.doesNotHaveAnyKeys(body, ["reported", "delete_password"]);
+                assert.isString(body._id);
+                assert.equal(body.text, thread_text);
+                assert.isBelow(new Date(body.created_on).getTime(), new Date(body.bumped_on).getTime());
+                const [reply] = body.replies;
+                assert.doesNotHaveAnyKeys(reply, ["reported", "delete_password"]);
+                assert.isString(reply._id);
+                assert.approximately(new Date(reply.created_on).getTime(), Date.now(), 5000);
+                assert.equal(reply.text, reply_text);
                 done();
               });
           });
@@ -241,25 +222,16 @@ suite('Functional Tests', function() {
   test("Viewing the 10 most recent threads with 3 replies each: GET request to /api/threads/{board}", done => {
     requester
       .get(`/api/threads/${board}`)
-      .end((err, arr) => {
-        let body = arr.body;
+      .end((err, {body}) => {
         assert.isAtMost(body.length, 10);
-        for (let i in body) {
-          let obj = body[i];
-          assert.isArray(obj.replies);
-          assert.isAtMost(obj.replies.length, 3);
-          assert.isDefined(obj._id);
-          assert.isDefined(obj.text);
-          assert.isDefined(obj.created_on);
-          assert.isDefined(obj.bumped_on);
-          assert.isUndefined(obj.reported);
-          assert.isUndefined(obj.delete_password);
-          for (let j in obj.replies) {
-            let reply = obj.replies[j];
-            assert.equal(Object.keys(reply).length, 3);
-            assert.isDefined(reply._id);
-            assert.isDefined(reply.created_on);
-            assert.isDefined(reply.text);
+        for (const thread of body) {
+          assert.isArray(thread.replies);
+          assert.isAtMost(thread.replies.length, 3);
+          assert.hasAnyKeys(thread, ["_id", "text", "created_on", "bumped_on"]);
+          assert.doesNotHaveAnyKeys(thread, ["reported", "delete_password"]);
+          for (const reply of thread.replies) {
+            assert.hasAllKeys(reply, ["_id", "text", "created_on"]);
+            assert.doesNotHaveAnyKeys(reply, ["reported", "delete_password"]);
           }
         }
         done();
