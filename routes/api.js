@@ -15,42 +15,51 @@ module.exports = function(app) {
   app.route("/api/threads/:board")
     
     .post(({params: {board}, body: {text, delete_password}}, res) => {
-      const NOW = new Date(),
-            RECORD = {
-              text,
-              created_on: NOW,
-              bumped_on: NOW,
-              reported: false,
-              delete_password: encrypt(delete_password),
-              replies: []
-            }
-      DB.collection(board).insertOne(RECORD, (err, {insertedId}) => {
-        if (err) {
-          res.json(err);
-        } else {
-          RECORD._id = insertedId;
-          res.json(RECORD);
-        }
-      });
+      try {
+        const NOW = new Date(),
+              RECORD = {
+                text,
+                created_on: NOW,
+                bumped_on: NOW,
+                reported: false,
+                delete_password: encrypt(delete_password),
+                replies: []
+              }
+        DB.collection(board).insertOne(RECORD, (err, {insertedId}) => {
+          if (err) {
+            res.json(err);
+          } else {
+            RECORD._id = insertedId;
+            res.json(RECORD);
+          }
+        });
+      } catch {
+        res.send("an error occurred");
+      }
     })
     
     .get(async({params: {board}}, res) => {
-      res.send(await DB.collection(board).aggregate([{
-        $sort: {bumped_on: 1},
-      }, {
-        $limit: 10
-      }, {
-        $set: {
-          replies: {$slice: ["$replies", -3]},
-        }
-      }, {
-        $project: {
-          delete_password: 0,
-          reported: 0,
-          "replies.delete_password": 0,
-          "replies.reported": 0
-        }
-      }]).toArray());
+      try {
+        res.send(await DB.collection(board).aggregate([{
+          $sort: {bumped_on: 1},
+        }, {
+          $limit: 10
+        }, {
+          $set: {
+            replycount: {$size: "$replies"},
+            replies: {$slice: ["$replies", -3]},
+          }
+        }, {
+          $project: {
+            delete_password: 0,
+            reported: 0,
+            "replies.delete_password": 0,
+            "replies.reported": 0
+          }
+        }]).toArray());
+      } catch {
+        res.send("board not provided");
+      }
     })
     
     .delete(({params: {board}, body: {thread_id, delete_password}}, res) => {
